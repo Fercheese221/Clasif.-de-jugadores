@@ -2,7 +2,7 @@
 
 Proyecto de Machine Learning que, dadas las métricas de un jugador de fútbol, determina cuál es su posición más apta en el campo.
 
-> **Estado:** Fase 1 completada (datos). Fase 2 en desarrollo: Etapa 0 y Nivel 1 listos; falta el Nivel 2.
+> **Estado:** Fase 1 completada (datos). Fase 2 en desarrollo: Etapa 0 y Nivel 1 evaluados; falta el Nivel 2.
 
 ## Arquitectura
 
@@ -30,16 +30,34 @@ El archivo original contiene varias versiones del juego, por lo que un mismo jug
 
 Una vez validado el pipeline, el dataset podrá sustituirse por estadísticas reales por 90 minutos (por ejemplo, de FBref) y reentrenar los modelos.
 
+## Resultados hasta ahora
+
+Evaluados sobre un conjunto de prueba de 3,670 jugadores (3,261 de campo), con la misma partición estratificada en todos los notebooks.
+
+| Componente | Resultado |
+|---|---|
+| Etapa 0 (portero vs. campo) | 100% de exactitud (409 porteros, sin errores) |
+| Nivel 1, 3 clases de campo | Exactitud ≈ 0.86 y macro-F1 ≈ 0.85 (referencia de clase mayoritaria: 0.41) |
+| Fisher + KNN vs. KNN sin proyección | Empate. Fisher comprime 37 métricas en 2 dimensiones sin perder desempeño |
+| Techo de los datos (Random Forest) | ≈ 0.88: un modelo mucho más flexible apenas mejora |
+| Clase adicional `Banda` (LM, RM, LW, RW) | Mejora LW y RW, pero empeora CAM, RM y LM. Sin ganador claro |
+| Probabilidades de KNN | Bien calibradas. Log-loss ≈ 0.34, frente a 1.06 usando solo frecuencias de clase |
+| Posiciones secundarias | En jugadores con varios roles, el acierto sube de 0.71 (solo posición principal) a 0.98 (cualquiera de sus posiciones) |
+| Posiciones espejo (LB/RB, LW/RW...) | No se distinguen con estas métricas, por lo que se fusionarán en el Nivel 2 |
+
+**Hallazgo principal:** gran parte del error restante no es del modelo sino de las etiquetas. Muchas posiciones son fronterizas y un jugador puede ocupar varias. Por eso la salida más útil es una **distribución de probabilidad sobre posiciones**, no una única etiqueta.
+
 ## Estructura del proyecto
 
 ```
 clasificador-posiciones-futbol/
 ├── data/
 │   ├── raw/          # Datos crudos descargados de Kaggle (no versionados)
-│   └── processed/    # Matrices X e y listas para entrenar (no versionadas)
+│   └── processed/    # jugadores_procesados.csv y posiciones_jugadores.csv (no versionados)
 ├── notebooks/
 │   ├── 01_exploracion.ipynb      # Análisis exploratorio
-│   └── 02_nivel1_fisher.ipynb    # Etapa 0 y Nivel 1
+│   ├── 02_nivel1_fisher.ipynb    # Etapa 0 y Nivel 1
+│   └── 03_taxonomia.ipynb        # Taxonomías de clases, probabilidades y posiciones secundarias
 ├── src/
 │   ├── data/
 │   │   └── make_dataset.py       # Descarga, limpieza y mapeo de posiciones
@@ -120,7 +138,7 @@ kaggle datasets list -s "ea sports fc 24"
 python src/data/make_dataset.py
 ```
 
-Descarga el dataset a `data/raw/` (se omite si ya existe) y genera `data/processed/jugadores_procesados.csv`.
+Descarga el dataset a `data/raw/` (se omite si ya existe) y genera en `data/processed/` los archivos `jugadores_procesados.csv` (métricas y etiquetas) y `posiciones_jugadores.csv` (lista completa de posiciones de cada jugador).
 
 ### 4. Cómo abrir los notebooks
 
@@ -143,8 +161,10 @@ Ejecútalo desde la raíz del repositorio y abre los notebooks de la carpeta `no
 - [ ] **Fase 2:** modelado
   - [x] Etapa 0: árbol de decisión que separa porteros y jugadores de campo
   - [x] Nivel 1: Fisher + KNN para la posición general
-  - [ ] Nivel 2: SFS + KNN para cada bloque
-  - [ ] Evaluación del ensamble completo
+  - [x] Comparación de taxonomías de clases (con y sin la clase `Banda`)
+  - [x] Evaluación de las probabilidades de KNN (calibración, log-loss, top-k)
+  - [ ] Nivel 2: SFS + KNN por bloque, con las posiciones espejo fusionadas y combinación de probabilidades entre niveles (enrutamiento suave)
+  - [ ] Evaluación del ensamble completo: top-k y acierto con posiciones secundarias, frente a un modelo plano de referencia
 - [ ] **Fase 3:** reemplazar los datos de EA FC por estadísticas reales (FBref)
 
 ## Licencia

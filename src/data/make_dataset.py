@@ -91,6 +91,13 @@ def process_data():
     df_out[metricas] = df_out[metricas].fillna(0)
 
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Lista completa de posiciones por jugador (p. ej. "RW, ST, LW"), en un
+    # archivo aparte para no mezclar texto con la matriz numérica de métricas.
+    df.loc[df_out.index, ["player_id", "player_positions"]].to_csv(
+        PROCESSED_DIR / "posiciones_jugadores.csv", index=False
+    )
+
     salida = PROCESSED_DIR / "jugadores_procesados.csv"
     df_out.to_csv(salida, index=False)
 
