@@ -1,23 +1,36 @@
 """K-Nearest Neighbors con distancias totalmente vectorizadas en NumPy."""
 import numpy as np
 
+# Con métricas enteras hay muchísimos empates exactos de distancia, y el cálculo
+# con BLAS rompe esos empates con ruido de redondeo que puede cambiar entre
+# ejecuciones. El desempate determinista redondea las distancias y resuelve los
+# empates por índice, de modo que el resultado no depende de ese ruido.
+DESEMPATE_DETERMINISTA = True
+_DECIMALES = 6
+
 
 class KNNClassifier:
-    def __init__(self, k=5, batch_size=1000):
+    def __init__(self, k=5, batch_size=1000, desempate=None):
         """
         k : int
             Número de vecinos.
         batch_size : int
             Cuántos puntos de consulta se procesan a la vez. Evita construir la
             matriz de distancias completa (n_consulta x n_entrenamiento) en memoria.
+        desempate : bool | None
+            Si es True, las distancias se redondean y los empates se resuelven por
+            índice (reproducible). None usa DESEMPATE_DETERMINISTA.
         """
         self.k = k
         self.batch_size = batch_size
+        self.desempate = DESEMPATE_DETERMINISTA if desempate is None else desempate
 
     def fit(self, X, y):
         self.X_ = np.asarray(X, dtype=float)
         self.classes_, self.y_ = np.unique(np.asarray(y), return_inverse=True)
         self._sq_norms = (self.X_ ** 2).sum(axis=1)
+        # Sesgo por índice, menor que la mitad de la rejilla de redondeo
+        self._sesgo = np.arange(len(self.X_)) * (0.5 * 10.0 ** -_DECIMALES / max(len(self.X_), 1))
         return self
 
     def kneighbors(self, X, k=None):
@@ -35,6 +48,9 @@ class KNNClassifier:
             # ||a - b||² = ||a||² + ||b||² - 2 a·b  (sin bucles anidados)
             d2 = (B ** 2).sum(axis=1)[:, None] + self._sq_norms[None, :] - 2.0 * (B @ self.X_.T)
             np.maximum(d2, 0, out=d2)
+            if self.desempate:
+                np.round(d2, _DECIMALES, out=d2)
+                d2 += self._sesgo[None, :]
 
             cand = np.argpartition(d2, k - 1, axis=1)[:, :k]
             d_cand = np.take_along_axis(d2, cand, axis=1)

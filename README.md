@@ -2,7 +2,7 @@
 
 Proyecto de Machine Learning que, dadas las métricas de un jugador de fútbol, determina cuál es su posición más apta en el campo. La salida es una **distribución de probabilidad sobre posiciones**, no una única etiqueta.
 
-> **Estado:** Fase 1 completada (datos). Fase 2: Etapa 0, Nivel 1 y Nivel 2 implementados y evaluados; falta empaquetar la función de predicción. La Fase 3 (datos reales) debe replantearse.
+> **Estado:** Fase 1 completada (datos). Fase 2: Etapa 0, Nivel 1 y Nivel 2 implementados, evaluados y verificados como reproducibles; falta empaquetar la función de predicción. La Fase 3 (datos reales) debe replantearse.
 
 ## Arquitectura
 
@@ -25,7 +25,7 @@ P(clase) = Σ_bloque  P(bloque) · P(clase | bloque)
 
 Con el **enrutamiento suave**, el jugador pasa por todos los bloques ponderado por su probabilidad, de modo que un error del Nivel 1 deja de ser definitivo. El enrutamiento duro (solo el bloque más probable) se conserva para comparar.
 
-La taxonomía es un parámetro: `Cascada` recibe qué clase pertenece a qué bloque, por lo que la misma cascada admite agrupaciones distintas (por ejemplo, con o sin un bloque `Banda`).
+La taxonomía es un parámetro: `Cascada` recibe qué clase pertenece a qué bloque (`src/taxonomia.py`). Se evaluaron dos agrupaciones: **A** (Defensa / Medio / Delantero), que es la configuración por defecto, y **B** (con un bloque adicional `Banda`), que se descartó por ser más frágil (ver Resultados).
 
 Fisher, KNN, SFS y la cascada están implementados desde cero con NumPy/SciPy (`src/models/`) y validados contra scikit-learn.
 
@@ -41,18 +41,18 @@ Las etiquetas de EA FC son calificaciones de un videojuego, no comportamiento re
 
 ## Resultados hasta ahora
 
-Evaluados sobre un conjunto de prueba de 3,670 jugadores (3,261 de campo), con la misma partición estratificada en todos los notebooks. Las cifras pueden variar ligeramente entre ejecuciones (del orden de 1 a 2 puntos).
+Evaluados sobre un conjunto de prueba de 3,670 jugadores (3,261 de campo), con la misma partición estratificada en todos los notebooks. Los resultados son reproducibles entre ejecuciones (ver Reproducibilidad); las diferencias de 1 a 2 puntos entre modelos están en el orden del error de muestreo (error estándar del top-1 ≈ 0.8 puntos).
 
 | Componente | Resultado |
 |---|---|
 | Etapa 0 (portero vs. campo) | 100% de exactitud (409 porteros, sin errores) |
 | Nivel 1 aislado (3 bloques de campo) | Exactitud ≈ 0.86 (clase mayoritaria: 0.41). Fisher comprime 37 métricas en 2 dimensiones y empata con KNN sin proyección |
-| Cascada completa, 9 clases (enrutamiento suave) | top-1 ≈ 0.69, top-2 ≈ 0.87, top-3 ≈ 0.94; acierto ≈ 0.82 si se aceptan las posiciones secundarias del jugador |
-| Enrutamiento suave vs. duro | El log-loss baja ≈ 38% (1.44 → 0.89) y el top-3 sube de 0.86 a 0.94; el top-1 no cambia |
-| Cascada vs. modelos planos | No supera a los planos en top-1 (Fisher + KNN: 0.70; Random Forest: 0.73), aunque sí al KNN plano en log-loss. Su valor es la interpretabilidad: cada bloque usa sus propias métricas |
-| Taxonomía de bloques (con o sin `Banda`) | Empate dentro del ruido. Se usa la más simple (sin `Banda`) |
-| Clases fusionadas (7) | top-1 ≈ 0.76 (Random Forest: 0.80). Los jugadores de banda y los carrileros se ubican bien en su familia de rol |
-| Calibración | Las probabilidades de la cascada están bien calibradas |
+| Cascada completa, 9 clases (enrutamiento suave, taxonomía A) | top-1 ≈ 0.68, top-2 ≈ 0.86, top-3 ≈ 0.94; acierto ≈ 0.82 si se aceptan las posiciones secundarias del jugador |
+| Enrutamiento suave vs. duro | El log-loss baja ≈ 39% (1.46 → 0.89) y el top-3 sube de 0.86 a 0.94; el top-1 no cambia |
+| Cascada vs. modelos planos | No supera a los planos en top-1 (Fisher + KNN: 0.70; Random Forest: 0.73), aunque sí al KNN plano en log-loss (0.89 vs 0.98). Su valor es la interpretabilidad: cada bloque usa sus propias métricas |
+| Taxonomía A vs. B (con bloque `Banda`) | A es igual o mejor (con 9 clases: mejor top-2, top-3 y log-loss; con 7 clases empatan). La selección de métricas de B cambia entre ejecuciones con desempeño equivalente y su calibración es peor. Se usa A |
+| Clases fusionadas (7) | top-1 ≈ 0.76 (Random Forest: 0.79). Los jugadores de banda y los carrileros se ubican bien en su familia de rol |
+| Calibración | La cascada A queda casi sobre la diagonal, con una ligera sobreconfianza en probabilidades altas. El Random Forest está subconfiado |
 | AUC uno-contra-resto | Entre 0.89 y 0.99 por clase (el más bajo, Carrilero: 0.81) |
 | Posiciones espejo (LB/RB, LW/RW...) | No se distinguen con estas métricas; se fusionan |
 
@@ -60,6 +60,23 @@ Evaluados sobre un conjunto de prueba de 3,670 jugadores (3,261 de campo), con l
 
 - Hay dos tipos de error. Los **errores de prior**, como Mediapunta o Pivote frente a Interior: el modelo ordena bien (AUC ≈ 0.90) pero pierde el desempate por tamaño de clase, y el top-2 lo rescata. Y los **errores de información**, como Extremo vs. Mediocampista de banda (AUC 0.65) y Carrilero vs. Lateral (AUC 0.59): los atributos del videojuego casi no los distinguen.
 - Por eso el top-1 subestima al modelo en las clases pequeñas, y conviene evaluar con top-2, top-3, AUC y log-loss.
+- Combinar probabilidades entre niveles (enrutamiento suave) es lo que más mejora la calidad de las probabilidades.
+
+## Reproducibilidad
+
+Los resultados son deterministas: ejecuciones separadas dan probabilidades idénticas, también con distinto número de hilos de MKL. Dos decisiones lo garantizan:
+
+- El KNN redondea las distancias y resuelve los empates por índice (`desempate`, activado por defecto). Con métricas enteras hay muchos empates de distancia, y sin este desempate el resultado sería frágil ante ruido numérico.
+- La evaluación usa un orden estable (`np.argsort(..., kind="stable")`) para elegir la clase más probable. Con el orden por defecto de NumPy, un empate exacto entre dos clases se resolvía distinto según la función usada y producía discrepancias de hasta 1.4 puntos en el acierto de una posición.
+
+Para verificarlo en otra máquina:
+
+```bash
+python scripts/verificar_reproducibilidad.py sensibilidad
+python scripts/verificar_reproducibilidad.py correr resultados/run1
+python scripts/verificar_reproducibilidad.py correr resultados/run2
+python scripts/verificar_reproducibilidad.py comparar resultados/run1 resultados/run2
+```
 
 ## Estructura del proyecto
 
@@ -73,16 +90,20 @@ clasificador-posiciones-futbol/
 │   ├── 02_nivel1_fisher.ipynb    # Etapa 0 y Nivel 1
 │   ├── 03_taxonomia.ipynb        # Taxonomías de clases, probabilidades y posiciones secundarias
 │   └── 04_nivel2_cascada.ipynb   # Nivel 2, cascada con enrutamiento suave y evaluación completa
+├── scripts/
+│   └── verificar_reproducibilidad.py   # Comparación de resultados entre ejecuciones
 ├── src/
+│   ├── taxonomia.py              # Posiciones -> clases finales -> bloques
 │   ├── data/
 │   │   └── make_dataset.py       # Descarga, limpieza y mapeo de posiciones
 │   └── models/
 │       ├── fisher.py             # Análisis Discriminante de Fisher
-│       ├── knn.py                # KNN vectorizado
+│       ├── knn.py                # KNN vectorizado con desempate determinista
 │       ├── nivel1.py             # Escalado + Fisher + KNN (Nivel 1)
 │       ├── sfs.py                # Selección secuencial de métricas + KNN (Nivel 2)
 │       ├── cascada.py            # Cascada con enrutamiento suave
 │       └── metricas.py           # Utilidades de evaluación
+├── resultados/                   # Salidas de la verificación (no versionadas)
 ├── environment.yml
 └── README.md
 ```
@@ -180,12 +201,12 @@ Ejecútalo desde la raíz del repositorio y abre los notebooks de la carpeta `no
 - [ ] **Fase 2:** modelado
   - [x] Etapa 0: árbol de decisión que separa porteros y jugadores de campo
   - [x] Nivel 1: Fisher + KNN para el bloque de campo
-  - [x] Comparación de taxonomías de clases
+  - [x] Comparación de taxonomías de clases (se adopta la taxonomía A)
   - [x] Evaluación de las probabilidades de KNN (calibración, log-loss, top-k, AUC)
   - [x] Nivel 2: SFS + KNN por bloque, con enrutamiento suave
   - [x] Evaluación del ensamble completo frente a modelos planos
-  - [ ] Verificar la variación de resultados entre ejecuciones
-  - [ ] Función `predecir` que devuelva las posiciones más probables de un jugador, y guardado del modelo
+  - [x] Verificación de reproducibilidad entre ejecuciones
+  - [ ] Función `predecir` que devuelva las posiciones más probables de un jugador, con criterio de desempate explícito, y guardado del modelo
 - [ ] **Fase 3:** reemplazar los datos de EA FC por estadísticas reales
   - FBref retiró sus estadísticas avanzadas en enero de 2026, así que esta fase debe replantearse: hay que elegir una fuente que ofrezca métricas de comportamiento y posiciones detalladas
 
